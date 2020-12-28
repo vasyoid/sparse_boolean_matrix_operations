@@ -118,6 +118,61 @@ void multiply_csr(const std::vector<uint32_t>& cols1,
     }
 }
 
+const uint32_t HASH_SCAL = 9973;
+
+uint32_t hash_operation(std::vector<int32_t>& table, int32_t key, uint32_t nz) {
+  uint32_t t_size = table.size();
+  uint32_t hash = (key * HASH_SCAL) % t_size;
+  while (true) {
+    if (table[hash] == key) {
+      break;
+    } else if (table[hash] == -1) {
+        table[hash] = key;
+        nz = nz + 1;
+        break;
+    } else {
+      hash = (hash + 1) % t_size;
+    }
+  }
+  return nz;
+}
+
+uint32_t count_intermediate(const std::vector<uint32_t>& cols1,
+                            const std::vector<uint32_t>& row_inds1,
+                            const std::vector<uint32_t>& row_inds2,
+                            uint32_t row) {
+  uint32_t result = 0;
+  for (uint32_t col_ind = row_inds1[row]; col_ind < row_inds1[row + 1]; ++col_ind) {
+    uint32_t col = cols1[col_ind];
+    result += (row_inds2[col + 1] - row_inds2[col]);
+  }
+  return result;
+}
+
+void multiply_csr_hash_table(const std::vector<uint32_t>& cols1,
+                  const std::vector<uint32_t>& row_inds1,
+                  const std::vector<uint32_t>& cols2,
+                  const std::vector<uint32_t>& row_inds2,
+                  std::vector<uint32_t>& cols3,
+                  std::vector<uint32_t>& row_inds3) {
+    uint32_t n = row_inds1.size() - 1;
+    row_inds3.push_back(0);
+
+    for (uint32_t i = 0; i < n; ++i) {
+      std::vector<int32_t> table(count_intermediate(cols1, row_inds1, row_inds2, i), -1);
+      for (uint32_t ind1 = row_inds1[i]; ind1 < row_inds1[i + 1]; ++ind1) {
+        uint32_t k = cols1[ind1];
+        for (uint32_t ind2 = row_inds2[k]; ind2 < row_inds2[k + 1]; ++ind2) {
+          hash_operation(table, cols2[ind2], 0);
+        }
+      }
+      table.resize(std::remove(table.begin(), table.end(), -1) - table.begin());
+      std::sort(table.begin(), table.end());
+      cols3.insert(cols3.end(), table.begin(), table.end());
+      row_inds3.push_back(cols3.size());
+    }
+}
+
 bool dense_equal(const std::vector<std::vector<uint8_t>>& a, const std::vector<std::vector<uint8_t>>& b) {
     for (uint32_t i = 0; i < a.size(); ++i) {
         for (uint32_t j = 0; j < a[i].size(); ++j) {
@@ -148,7 +203,7 @@ bool test_multiply(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) {
 
     std::vector<uint32_t> cols3;
     std::vector<uint32_t> row_inds3;
-    multiply_csr(cols1, row_inds1, cols2, row_inds2, cols3, row_inds3);
+    multiply_csr_hash_table(cols1, row_inds1, cols2, row_inds2, cols3, row_inds3);
 
     std::vector<std::vector<uint8_t>> actual;
     csr_to_dense(cols3, row_inds3, n, m, actual);
@@ -171,11 +226,12 @@ bool test_multiply(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) {
 }
 
 int main() {
-    std::random_device rd; // 5 4 4 485731480
+    std::random_device rd;
     for (int i = 1; i <= 1000; ++i) {
         if (!test_multiply(i / 10 + 4, i / 7 + 5, i / 5 + 6, rd())) {
-            break;
+            exit(1);
         }
     }
-    return 0;
+    std::cout << "OK\n";
+  return 0;
 }
