@@ -2,236 +2,183 @@
 #include <vector>
 #include <cstdint>
 
-#include <random>
-#include <algorithm>
+#include "csr_utils.hpp"
+#include "../utils.hpp"
+#include "../library_classes/matrix_csr.hpp"
+#include "bitonic_sort.hpp"
 
-void generate_csr(std::vector<uint32_t> &cols, std::vector<uint32_t> &row_inds,
-                  uint32_t n, uint32_t m, std::mt19937 rand) {
-    cols.clear();
-    row_inds.clear();
+bool test_multiply_cpu(uint32_t n, uint32_t m, uint32_t k, int seed) {
+    FastRandom rand(seed);
 
-    std::vector<std::pair<uint32_t, uint32_t>> mat;
+    std::vector<uint32_t> cols1;
+    std::vector<uint32_t> row_inds1;
+    csr_utils::generate_csr(cols1, row_inds1, n, k, rand);
 
-    uint32_t s = n + m;
-    uint32_t nz = (rand() % s) + s / 2;
+    std::vector<uint32_t> cols2;
+    std::vector<uint32_t> row_inds2;
+    csr_utils::generate_csr(cols2, row_inds2, k, m, rand);
 
-    mat.reserve(nz);
-    for (uint32_t i = 0; i < nz; ++i) {
-        mat.emplace_back(rand() % n, rand() % m);
-    }
+    std::vector<std::vector<uint8_t>> mat1;
+    csr_utils::csr_to_dense(cols1, row_inds1, n, k, mat1);
+    std::vector<std::vector<uint8_t>> mat2;
+    csr_utils::csr_to_dense(cols2, row_inds2, k, m, mat2);
 
-    std::sort(mat.begin(), mat.end());
+    std::vector<std::vector<uint8_t>> expected;
+    csr_utils::multiply_dense(mat1, mat2, expected);
 
-    mat.resize(std::unique(mat.begin(), mat.end()) - mat.begin());
+    std::vector<uint32_t> cols3;
+    std::vector<uint32_t> row_inds3;
+    csr_utils::multiply_csr_hash_table(cols1, row_inds1, cols2, row_inds2, cols3, row_inds3);
 
-    nz = mat.size();
-
-    row_inds.push_back(0);
-    uint32_t cur_row = 0;
-    for (uint32_t i = 0; i < nz; ++i) {
-        cols.push_back(mat[i].second);
-        while (cur_row < mat[i].first) {
-            row_inds.push_back(i);
-            ++cur_row;
-        }
-    }
-    while (cur_row <= n) {
-        row_inds.push_back(nz);
-        ++cur_row;
-    }
-}
-
-void print_csr(const std::vector<uint32_t> &cols, const std::vector<uint32_t> &row_inds, uint32_t n, uint32_t m) {
-    uint32_t col = 0;
-    for (uint32_t i = 0; i < n; ++i) {
-        for (uint32_t j = 0; j < m; ++j) {
-            if (row_inds[i] < row_inds[i + 1] && col < row_inds[i + 1] && j == cols[col]) {
-                std::cout << 1;
-                ++col;
-            } else {
-                std::cout << 0;
-            }
-        }
-        std::cout << std::endl;
-    }
-}
-
-void print_dense(const std::vector<std::vector<uint8_t>>& mat) {
-    for (const auto& row : mat) {
-        for (uint8_t x : row) {
-            std::cout << int(x);
-        }
-        std::cout << std::endl;
-    }
-}
-
-void multiply_dense(const std::vector<std::vector<uint8_t>>& a, const std::vector<std::vector<uint8_t>>& b,
-                    std::vector<std::vector<uint8_t>>& c) {
-    c.resize(a.size());
-    for (uint32_t i = 0; i < a.size(); ++i) {
-        for (uint32_t j = 0; j < b[0].size(); ++j) {
-            c[i].push_back(0);
-            for (uint32_t k = 0; k < b.size(); ++k) {
-                c[i][j] |= a[i][k] & b[k][j];
-            }
-        }
-    }
-}
-
-void csr_to_dense(const std::vector<uint32_t>& cols,
-                  const std::vector<uint32_t>& row_inds,
-                  uint32_t n, uint32_t m,
-                  std::vector<std::vector<uint8_t>>& result) {
-    result.resize(n);
-    uint32_t col = 0;
-    for (uint32_t i = 0; i < n; ++i) {
-        for (uint32_t j = 0; j < m; ++j) {
-            if (row_inds[i] < row_inds[i + 1] && col < row_inds[i + 1] && j == cols[col]) {
-                result[i].push_back(1);
-                ++col;
-            } else {
-                result[i].push_back(0);
-            }
-        }
-    }
-}
-
-void multiply_csr(const std::vector<uint32_t>& cols1,
-                  const std::vector<uint32_t>& row_inds1,
-                  const std::vector<uint32_t>& cols2,
-                  const std::vector<uint32_t>& row_inds2,
-                  std::vector<uint32_t>& cols3,
-                  std::vector<uint32_t>& row_inds3) {
-    uint32_t n = row_inds1.size() - 1;
-    row_inds3.push_back(0);
-    for (uint32_t i = 0; i < n; ++i) {
-        for (uint32_t ind1 = row_inds1[i]; ind1 < row_inds1[i + 1]; ++ind1) {
-            uint32_t k = cols1[ind1];
-            for (uint32_t ind2 = row_inds2[k]; ind2 < row_inds2[k + 1]; ++ind2) {
-                uint32_t j = cols2[ind2];
-                auto it = lower_bound(cols3.begin() + row_inds3.back(), cols3.end(), j);
-                if (it != cols3.end() && *it == j) continue;
-                cols3.insert(it, j);
-            }
-        }
-        row_inds3.push_back(cols3.size());
-    }
-}
-
-const uint32_t HASH_SCAL = 9973;
-
-uint32_t hash_operation(std::vector<int32_t>& table, int32_t key, uint32_t nz) {
-  uint32_t t_size = table.size();
-  uint32_t hash = (key * HASH_SCAL) % t_size;
-  while (true) {
-    if (table[hash] == key) {
-      break;
-    } else if (table[hash] == -1) {
-        table[hash] = key;
-        nz = nz + 1;
-        break;
-    } else {
-      hash = (hash + 1) % t_size;
-    }
-  }
-  return nz;
-}
-
-uint32_t count_intermediate(const std::vector<uint32_t>& cols1,
-                            const std::vector<uint32_t>& row_inds1,
-                            const std::vector<uint32_t>& row_inds2,
-                            uint32_t row) {
-  uint32_t result = 0;
-  for (uint32_t col_ind = row_inds1[row]; col_ind < row_inds1[row + 1]; ++col_ind) {
-    uint32_t col = cols1[col_ind];
-    result += (row_inds2[col + 1] - row_inds2[col]);
-  }
-  return result;
-}
-
-void multiply_csr_hash_table(const std::vector<uint32_t>& cols1,
-                  const std::vector<uint32_t>& row_inds1,
-                  const std::vector<uint32_t>& cols2,
-                  const std::vector<uint32_t>& row_inds2,
-                  std::vector<uint32_t>& cols3,
-                  std::vector<uint32_t>& row_inds3) {
-    uint32_t n = row_inds1.size() - 1;
-    row_inds3.push_back(0);
-
-    for (uint32_t i = 0; i < n; ++i) {
-      std::vector<int32_t> table(count_intermediate(cols1, row_inds1, row_inds2, i), -1);
-      for (uint32_t ind1 = row_inds1[i]; ind1 < row_inds1[i + 1]; ++ind1) {
-        uint32_t k = cols1[ind1];
-        for (uint32_t ind2 = row_inds2[k]; ind2 < row_inds2[k + 1]; ++ind2) {
-          hash_operation(table, cols2[ind2], 0);
-        }
-      }
-      table.resize(std::remove(table.begin(), table.end(), -1) - table.begin());
-      std::sort(table.begin(), table.end());
-      cols3.insert(cols3.end(), table.begin(), table.end());
-      row_inds3.push_back(cols3.size());
-    }
-}
-
-bool dense_equal(const std::vector<std::vector<uint8_t>>& a, const std::vector<std::vector<uint8_t>>& b) {
-    for (uint32_t i = 0; i < a.size(); ++i) {
-        for (uint32_t j = 0; j < a[i].size(); ++j) {
-            if (a[i][j] != b[i][j]) return false;
-        }
+    std::vector<std::vector<uint8_t>> actual;
+    csr_utils::csr_to_dense(cols3, row_inds3, n, m, actual);
+    if (expected != actual) {
+        std::cout << seed << "\n";
+        csr_utils::print_dense(mat1);
+        std::cout << "*\n";
+        csr_utils::print_dense(mat2);
+        std::cout << "=\n";
+        csr_utils::print_dense(expected);
+        std::cout << "\n";
+        csr_utils::print_csr(cols1, row_inds1, n, k);
+        std::cout << "*\n";
+        csr_utils::print_csr(cols2, row_inds2, k, m);
+        std::cout << "=\n";
+        csr_utils::print_csr(cols3, row_inds3, n, m);
+        return false;
     }
     return true;
 }
 
-bool test_multiply(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) {
-    std::mt19937 rand(seed);
+bool test_add_cpu(uint32_t n, uint32_t m, int seed) {
+    FastRandom rand(seed);
 
     std::vector<uint32_t> cols1;
     std::vector<uint32_t> row_inds1;
-    generate_csr(cols1, row_inds1, n, k, rand);
+    csr_utils::generate_csr(cols1, row_inds1, n, m, rand);
 
     std::vector<uint32_t> cols2;
     std::vector<uint32_t> row_inds2;
-    generate_csr(cols2, row_inds2, k, m, rand);
+    csr_utils::generate_csr(cols2, row_inds2, n, m, rand);
 
     std::vector<std::vector<uint8_t>> mat1;
-    csr_to_dense(cols1, row_inds1, n, k, mat1);
+    csr_utils::csr_to_dense(cols1, row_inds1, n, m, mat1);
     std::vector<std::vector<uint8_t>> mat2;
-    csr_to_dense(cols2, row_inds2, k, m, mat2);
+    csr_utils::csr_to_dense(cols2, row_inds2, n, m, mat2);
 
     std::vector<std::vector<uint8_t>> expected;
-    multiply_dense(mat1, mat2, expected);
+    csr_utils::add_dense(mat1, mat2, expected);
 
     std::vector<uint32_t> cols3;
     std::vector<uint32_t> row_inds3;
-    multiply_csr_hash_table(cols1, row_inds1, cols2, row_inds2, cols3, row_inds3);
+    csr_utils::add_csr_hash_table(cols1, row_inds1, cols2, row_inds2, cols3, row_inds3);
 
     std::vector<std::vector<uint8_t>> actual;
-    csr_to_dense(cols3, row_inds3, n, m, actual);
-    if (!dense_equal(expected, actual)) {
+    csr_utils::csr_to_dense(cols3, row_inds3, n, m, actual);
+    if (expected != actual) {
         std::cout << seed << "\n";
-        print_dense(mat1);
-        std::cout << "*\n";
-        print_dense(mat2);
+        csr_utils::print_dense(mat1);
+        std::cout << "+\n";
+        csr_utils::print_dense(mat2);
         std::cout << "=\n";
-        print_dense(expected);
+        csr_utils::print_dense(expected);
         std::cout << "\n";
-        print_csr(cols1, row_inds1, n, k);
-        std::cout << "*\n";
-        print_csr(cols2, row_inds2, k, m);
+        csr_utils::print_csr(cols1, row_inds1, n, m);
+        std::cout << "+\n";
+        csr_utils::print_csr(cols2, row_inds2, n, m);
         std::cout << "=\n";
-        print_csr(cols3, row_inds3, n, m);
+        csr_utils::print_csr(cols3, row_inds3, n, m);
+        return false;
+    }
+    return true;
+}
+
+bool test_multiply_gpu(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) {
+    FastRandom rand(seed);
+    Controls controls = utils::create_controls();
+
+    std::vector<uint32_t> cols1;
+    std::vector<uint32_t> row_inds1;
+    csr_utils::generate_csr(cols1, row_inds1, n, k, rand);
+    matrix_csr mat1_gpu = matrix_csr(controls, n, k, cols1.size(), row_inds1, cols1);
+
+    std::vector<uint32_t> cols2;
+    std::vector<uint32_t> row_inds2;
+    csr_utils::generate_csr(cols2, row_inds2, k, m, rand);
+    matrix_csr mat2_gpu(controls, k, m, cols1.size(), row_inds2, cols2);
+
+    std::vector<uint32_t> cols_expected;
+    std::vector<uint32_t> row_inds_expected;
+    csr_utils::multiply_csr_hash_table(cols1, row_inds1, cols2, row_inds2, cols_expected, row_inds_expected);
+
+    matrix_csr actual_gpu;
+    //csr_utils::multiply_gpu(cols1, row_inds1, cols2, row_inds2, cols_expected, row_inds_expected);
+
+    const std::vector<uint32_t>& cols_actual = actual_gpu.cols_indexes_cpu();
+    const std::vector<uint32_t>& row_inds_actual = actual_gpu.rows_pointers_cpu();
+
+    if (cols_expected != cols_actual || row_inds_expected != row_inds_actual) {
+        std::cout << seed << "\nexpected:\n";
+        csr_utils::print_csr(cols1, row_inds1, n, k);
+        std::cout << "*\n";
+        csr_utils::print_csr(cols2, row_inds2, k, m);
+        std::cout << "=\n";
+        csr_utils::print_csr(cols_expected, row_inds_expected, n, m);
+        std::cout << "actual:\n";
+        csr_utils::print_csr(cols_actual, row_inds_actual, n, m);
+        return false;
+    }
+    return true;
+}
+
+bool test_bitonic_sort(uint32_t size, int seed) {
+    FastRandom rand(seed);
+    Controls controls = utils::create_controls();
+
+    std::vector<uint32_t> data_cpu(size);
+
+    for (auto& value : data_cpu) {
+        value = rand.next(0, size);
+    }
+
+    std::vector<uint32_t> expected(data_cpu.begin(), data_cpu.end());
+    std::sort(expected.begin(), expected.end());
+
+    cl::Buffer data_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * size);
+    controls.queue.enqueueWriteBuffer(data_gpu, CL_TRUE, 0, sizeof(uint32_t) * size, data_cpu.data());
+
+    sort(controls, data_gpu, size);
+
+    std::vector<uint32_t> actual(size);
+    controls.queue.enqueueReadBuffer(data_gpu, CL_TRUE, 0, sizeof(uint32_t) * size, actual.data());
+
+    if (expected != actual) {
+        std::cout << "incorrect sort: " << std::endl;
+        for (auto& value : expected) {
+            std::cout << value << " ";
+        }
+        std::cout << std::endl;
+        for (auto& value : actual) {
+            std::cout << value << " ";
+        }
+        std::cout << std::endl;
         return false;
     }
     return true;
 }
 
 int main() {
-    std::random_device rd;
-    for (int i = 1; i <= 1000; ++i) {
-        if (!test_multiply(i / 10 + 4, i / 7 + 5, i / 5 + 6, rd())) {
+    FastRandom rand;
+    for (int i = 1; i <= 10; ++i) {
+        if (!test_bitonic_sort(i * 2, rand.next())) {
             exit(1);
         }
     }
+//    for (int i = 1; i <= 1000; ++i) {
+//        if (!test_add_cpu(i / 10 + 4, i / 7 + 5, rand.next())) {
+//            exit(1);
+//        }
+//    }
     std::cout << "OK\n";
   return 0;
 }

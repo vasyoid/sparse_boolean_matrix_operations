@@ -13,7 +13,9 @@ private:
 
 public:
 
-    matrix_csr(Controls controls, uint32_t nRows, uint32_t nCols, uint32_t nEntities)
+  matrix_csr() = default;
+
+  matrix_csr(Controls controls, uint32_t nRows, uint32_t nCols, uint32_t nEntities)
             : matrix_base(nRows, nCols, nEntities)
             // TODO: confirm if we need CL_MEM_READ_WRITE
             , _rows_pointers_gpu(cl::Buffer(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * n_entities))
