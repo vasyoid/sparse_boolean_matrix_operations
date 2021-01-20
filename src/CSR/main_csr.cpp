@@ -6,6 +6,7 @@
 #include "../utils.hpp"
 #include "../library_classes/matrix_csr.hpp"
 #include "bitonic_sort.hpp"
+#include "count_workload.hpp"
 
 bool test_multiply_cpu(uint32_t n, uint32_t m, uint32_t k, int seed) {
     FastRandom rand(seed);
@@ -154,6 +155,48 @@ bool test_bitonic_sort(uint32_t size, int seed) {
 
     if (expected != actual) {
         std::cout << "incorrect sort: " << std::endl;
+        for (auto& value : expected) {
+            std::cout << value << " ";
+        }
+        std::cout << std::endl;
+        for (auto& value : actual) {
+            std::cout << value << " ";
+        }
+        std::cout << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool test_count_workload(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) {
+    FastRandom rand(seed);
+    Controls controls = utils::create_controls();
+
+    std::vector<uint32_t> cols1;
+    std::vector<uint32_t> row_inds1;
+    csr_utils::generate_csr(cols1, row_inds1, n, k, rand);
+    cl::Buffer a_rows_pointers_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * n);
+    cl::Buffer a_cols_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * n);
+
+    std::vector<uint32_t> cols2;
+    std::vector<uint32_t> row_inds2;
+    csr_utils::generate_csr(cols2, row_inds2, k, m, rand);
+    cl::Buffer b_rows_pointers_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * k);
+    cl::Buffer b_cols_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * k);
+
+    std::vector<uint32_t> expected;
+
+    for (uint32_t row = 0; row < row_inds1.size() - 1; ++row) {
+        expected.push_back(csr_utils::count_intermediate(cols1, row_inds1, row_inds2, row));
+    }
+
+    cl::Buffer actual_gpu;
+    count_workload(controls, actual_gpu, a_rows_pointers_gpu, a_cols_gpu, b_rows_pointers_gpu, b_cols_gpu, n);
+
+    std::vector<uint32_t> actual(n);
+    controls.queue.enqueueReadBuffer(actual_gpu, CL_TRUE, 0, sizeof(uint32_t) * n, actual.data());
+
+    if (expected != actual) {
         for (auto& value : expected) {
             std::cout << value << " ";
         }

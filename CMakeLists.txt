@@ -59,6 +59,7 @@ add_executable(sparse-boolean-matrix-operations-csr
         src/CSR/main_csr.cpp
         src/CSR/csr_utils.cpp
         src/CSR/bitonic_sort.cpp
+        src/CSR/count_workload.cpp
         src/utils.cpp
         )
 
