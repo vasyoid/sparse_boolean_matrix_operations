@@ -9,4 +9,5 @@ void count_workload(Controls &controls,
                     const cl::Buffer &a_cols,
                     cl::Buffer &b_rows_pointers,
                     const cl::Buffer &b_cols,
-                    uint32_t rows_cnt);
+                    uint32_t rows_cnt,
+                    uint32_t a_nzr);

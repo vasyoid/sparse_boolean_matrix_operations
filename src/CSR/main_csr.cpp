@@ -177,12 +177,16 @@ bool test_count_workload(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) 
     csr_utils::generate_csr(cols1, row_inds1, n, k, rand);
     cl::Buffer a_rows_pointers_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * n);
     cl::Buffer a_cols_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * n);
+    csr_utils::write_buffer(controls, row_inds1, a_rows_pointers_gpu);
+    csr_utils::write_buffer(controls, cols1, a_cols_gpu);
 
     std::vector<uint32_t> cols2;
     std::vector<uint32_t> row_inds2;
     csr_utils::generate_csr(cols2, row_inds2, k, m, rand);
     cl::Buffer b_rows_pointers_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * k);
     cl::Buffer b_cols_gpu(controls.context, CL_MEM_READ_WRITE, sizeof(uint32_t) * k);
+    csr_utils::write_buffer(controls, row_inds2, b_rows_pointers_gpu);
+    csr_utils::write_buffer(controls, cols2, b_cols_gpu);
 
     std::vector<uint32_t> expected;
 
@@ -191,10 +195,10 @@ bool test_count_workload(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) 
     }
 
     cl::Buffer actual_gpu;
-    count_workload(controls, actual_gpu, a_rows_pointers_gpu, a_cols_gpu, b_rows_pointers_gpu, b_cols_gpu, n);
+    count_workload(controls, actual_gpu, a_rows_pointers_gpu, a_cols_gpu, b_rows_pointers_gpu, b_cols_gpu, n, cols1.size());
 
     std::vector<uint32_t> actual(n);
-    controls.queue.enqueueReadBuffer(actual_gpu, CL_TRUE, 0, sizeof(uint32_t) * n, actual.data());
+    csr_utils::read_buffer(controls, actual, actual_gpu);
 
     if (expected != actual) {
         for (auto& value : expected) {
@@ -212,16 +216,11 @@ bool test_count_workload(uint32_t n, uint32_t m, uint32_t k, unsigned int seed) 
 
 int main() {
     FastRandom rand;
-    for (int i = 1; i <= 10; ++i) {
-        if (!test_bitonic_sort(i * 2, rand.next())) {
+    for (int i = 1; i <= 3; ++i) {
+        if (!test_count_workload(i * 2, i * 3, i * 4, rand.next())) {
             exit(1);
         }
     }
-//    for (int i = 1; i <= 1000; ++i) {
-//        if (!test_add_cpu(i / 10 + 4, i / 7 + 5, rand.next())) {
-//            exit(1);
-//        }
-//    }
     std::cout << "OK\n";
   return 0;
 }

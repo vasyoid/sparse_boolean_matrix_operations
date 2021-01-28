@@ -204,4 +204,26 @@ namespace csr_utils {
             row_inds3.push_back(cols3.size());
         }
     }
+
+    void write_buffer(Controls& controls, const std::vector<uint32_t>& buffer_cpu, cl::Buffer& buffer_gpu) {
+        try {
+            controls.queue.enqueueWriteBuffer(buffer_gpu, CL_TRUE, 0, sizeof(uint32_t) * buffer_cpu.size(),
+                                              buffer_cpu.data());
+        } catch (const cl::Error& e) {
+            std::stringstream exception;
+            exception << "\n" << e.what() << " : " << e.err() << "\n";
+            throw std::runtime_error(exception.str());
+        }
+    }
+
+    void read_buffer(Controls& controls, std::vector<uint32_t>& buffer_cpu, cl::Buffer& buffer_gpu) {
+        try {
+            controls.queue.enqueueReadBuffer(buffer_gpu, CL_TRUE, 0, sizeof(uint32_t) * buffer_cpu.size(),
+                                              buffer_cpu.data());
+        } catch (const cl::Error& e) {
+            std::stringstream exception;
+            exception << "\n" << e.what() << " : " << e.err() << "\n";
+            throw std::runtime_error(exception.str());
+        }
+    }
 }

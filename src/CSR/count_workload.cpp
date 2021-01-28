@@ -7,7 +7,8 @@ void count_workload(Controls &controls,
                     const cl::Buffer &a_cols,
                     cl::Buffer &b_rows_pointers,
                     const cl::Buffer &b_cols,
-                    uint32_t rows_cnt) {
+                    uint32_t rows_cnt,
+                    uint32_t a_nzr) {
 
     // буффер с распределением рабочей нагрузки, равен числу строк матрицы A
     cl::Program program;
@@ -26,12 +27,12 @@ void count_workload(Controls &controls,
 
 
         cl::Kernel count_workload_kernel(program, "count_workload");
-        cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer> count_workload(
+        cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer, uint32_t> count_workload(
             count_workload_kernel);
 
         cl::EnqueueArgs eargs(controls.queue, cl::NDRange(global_work_size), cl::NDRange(work_group_size));
 
-        count_workload(eargs, workload, a_rows_pointers, a_cols, b_rows_pointers);
+        count_workload(eargs, workload, a_rows_pointers, a_cols, b_rows_pointers, a_nzr);
 
         workload_out = std::move(workload);
 

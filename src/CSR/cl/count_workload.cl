@@ -1,7 +1,8 @@
 __kernel void count_workload(__global unsigned int* workload,
                              __global const unsigned int* a_rows_pointers,
                              __global const unsigned int* a_cols,
-                             __global const unsigned int* b_rows_pointers) {
+                             __global const unsigned int* b_rows_pointers,
+                             unsigned int a_nzr) {
     uint global_id = get_global_id(0);
     if (global_id >= a_nzr) return;
 
@@ -13,5 +14,5 @@ __kernel void count_workload(__global unsigned int* workload,
         uint col = a_cols[col_ind];
         result += (b_rows_pointers[col + 1] - b_rows_pointers[col]);
     }
-    return workload[global_id] = result;
+    workload[global_id] = result;
 }

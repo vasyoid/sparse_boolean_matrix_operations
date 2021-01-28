@@ -58,4 +58,8 @@ namespace csr_utils {
                             const std::vector<uint32_t>& row_inds2,
                             std::vector<uint32_t>& cols3,
                             std::vector<uint32_t>& row_inds3);
+
+    void write_buffer(Controls& controls, const std::vector<uint32_t>& buffer_cpu, cl::Buffer& buffer_gpu);
+
+    void read_buffer(Controls& controls, std::vector<uint32_t>& buffer_cpu, cl::Buffer& buffer_gpu);
 }
